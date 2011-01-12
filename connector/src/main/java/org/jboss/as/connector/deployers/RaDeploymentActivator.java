@@ -23,6 +23,7 @@
 package org.jboss.as.connector.deployers;
 
 import org.jboss.as.connector.ConnectorServices;
+import org.jboss.as.connector.deployers.processors.DriverProcessor;
 import org.jboss.as.connector.deployers.processors.DsDependencyProcessor;
 import org.jboss.as.connector.deployers.processors.DsDeploymentProcessor;
 import org.jboss.as.connector.deployers.processors.IronJacamarDeploymentParsingProcessor;
@@ -69,5 +70,6 @@ public class RaDeploymentActivator {
         updateContext.addDeploymentProcessor(Phase.DEPENDENCIES, Phase.DEPENDENCIES_DS, new DsDependencyProcessor());
         updateContext.addDeploymentProcessor(Phase.INSTALL, Phase.INSTALL_DS_DEPLOYMENT, new DsDeploymentProcessor());
         updateContext.addDeploymentProcessor(Phase.STRUCTURE, Phase.STRUCTURE_RAR, new RaStructureProcessor());
+        updateContext.addDeploymentProcessor(Phase.INSTALL, Phase.INSTALL_JDBC_DRIVER, new DriverProcessor());
     }
 }
