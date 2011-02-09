@@ -22,7 +22,6 @@
 
 package org.jboss.as.server;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Iterator;
@@ -54,7 +53,6 @@ import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
-import org.jboss.msc.service.TrackingServiceTarget;
 
 /**
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
@@ -65,7 +63,6 @@ final class ApplicationServerService implements Service<Void> {
     private static final Logger configLog = Logger.getLogger("org.jboss.as.config");
     private final List<ServiceActivator> extraServices;
     private final Bootstrap.Configuration configuration;
-    private List<ServiceName> services;
     private volatile long startTime;
 
     ApplicationServerService(final List<ServiceActivator> extraServices, final Bootstrap.Configuration configuration) {
@@ -101,6 +98,7 @@ final class ApplicationServerService implements Service<Void> {
                 configLog.trace(b);
             }
         }
+        final ServiceTarget serviceTarget = context.getChildTarget();
         final ServiceController<?> myController = context.getController();
         final ServiceContainer container = myController.getServiceContainer();
         long startTime = this.startTime;
@@ -112,8 +110,6 @@ final class ApplicationServerService implements Service<Void> {
         final BootstrapListener bootstrapListener = new BootstrapListener(container, startTime);
         container.addListener(bootstrapListener);
         myController.addListener(bootstrapListener);
-        final TrackingServiceTarget serviceTarget = new TrackingServiceTarget(container.subTarget());
-        serviceTarget.addDependency(myController.getName());
         ServerDeploymentRepositoryImpl.addService(serviceTarget, serverEnvironment.getServerDeployDir(), serverEnvironment.getServerSystemDeployDir());
         DeploymentModuleLoaderImpl.addService(serviceTarget, configuration.getModuleLoader());
         ServerControllerService.addService(serviceTarget, configuration);
@@ -154,7 +150,6 @@ final class ApplicationServerService implements Service<Void> {
         AbsolutePathService.addService("user.home", System.getProperty("user.home"), serviceTarget);
         AbsolutePathService.addService("java.home", System.getProperty("java.home"), serviceTarget);
 
-        services = new ArrayList<ServiceName>(serviceTarget.getSet());
         if (log.isDebugEnabled()) {
             final long nanos = context.getElapsedTime();
             log.debugf("JBoss AS root service started in %d.%06d ms", Long.valueOf(nanos / 1000000L), Long.valueOf(nanos % 1000000L));
@@ -163,24 +158,7 @@ final class ApplicationServerService implements Service<Void> {
 
     @Override
     public synchronized void stop(final StopContext context) {
-        log.infof("Shutdown requested; stopping all services");
-        context.asynchronous();
-        final ServiceContainer container = context.getController().getServiceContainer();
-        final MultipleRemoveListener<Runnable> listener = MultipleRemoveListener.create(new Runnable() {
-            @Override
-            public void run() {
-                context.complete();
-                log.infof("JBoss AS %s \"%s\" stopped in %dms", Version.AS_VERSION, Version.AS_RELEASE_CODENAME, Integer.valueOf((int) (context.getElapsedTime() / 1000000L)));
-            }
-        });
-        for (ServiceName name : services) {
-            ServiceController<?> service = container.getService(name);
-            if (service != null) {
-                service.addListener(listener);
-                service.setMode(ServiceController.Mode.REMOVE);
-            }
-        }
-        listener.done();
+        log.infof("JBoss AS %s \"%s\" stopped in %dms", Version.AS_VERSION, Version.AS_RELEASE_CODENAME, Integer.valueOf((int) (context.getElapsedTime() / 1000000L)));
     }
 
     @Override

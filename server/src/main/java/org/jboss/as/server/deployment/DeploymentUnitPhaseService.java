@@ -22,28 +22,25 @@
 
 package org.jboss.as.server.deployment;
 
-import java.util.HashSet;
 import java.util.List;
 import java.util.ListIterator;
-import java.util.Set;
 import org.jboss.logging.Logger;
 import org.jboss.msc.inject.Injector;
 import org.jboss.msc.service.DelegatingServiceRegistry;
-import org.jboss.msc.service.LifecycleContext;
-import org.jboss.msc.service.MultipleRemoveListener;
 import org.jboss.msc.service.Service;
 import org.jboss.msc.service.ServiceBuilder;
 import org.jboss.msc.service.ServiceContainer;
-import org.jboss.msc.service.ServiceController;
 import org.jboss.msc.service.ServiceName;
+import org.jboss.msc.service.ServiceTarget;
 import org.jboss.msc.service.StartContext;
 import org.jboss.msc.service.StartException;
 import org.jboss.msc.service.StopContext;
-import org.jboss.msc.service.TrackingServiceTarget;
 import org.jboss.msc.value.InjectedValue;
 
 /**
  * A service which executes a particular phase of deployment.
+ *
+ * @param <T> the public type of this deployment unit phase
  *
  * @author <a href="mailto:david.lloyd@redhat.com">David M. Lloyd</a>
  */
@@ -53,8 +50,6 @@ final class DeploymentUnitPhaseService<T> implements Service<T> {
     private final InjectedValue<DeploymentUnit> deploymentUnitInjector = new InjectedValue<DeploymentUnit>();
     private final Phase phase;
     private final AttachmentKey<T> valueKey;
-
-    private Set<ServiceName> serviceNames;
 
     private static final Logger log = Logger.getLogger("org.jboss.as.server.deployment");
 
@@ -77,34 +72,18 @@ final class DeploymentUnitPhaseService<T> implements Service<T> {
         final List<DeploymentUnitProcessor> list = chains.getChain(phase);
         final ListIterator<DeploymentUnitProcessor> iterator = list.listIterator();
         final ServiceContainer container = context.getController().getServiceContainer();
-        final TrackingServiceTarget serviceTarget = new TrackingServiceTarget(container.subTarget());
+        final ServiceTarget serviceTarget = context.getChildTarget().subTarget();
         final DeploymentPhaseContext processorContext = new DeploymentPhaseContextImpl(serviceTarget, new DelegatingServiceRegistry(container), deploymentUnit, phase);
         while (iterator.hasNext()) {
             final DeploymentUnitProcessor processor = iterator.next();
             try {
                 processor.deploy(processorContext);
             } catch (Throwable e) {
-                // Asynchronously remove all services
-                context.asynchronous();
-                final StartException cause = new StartException(String.format("Failed to process phase %s of %s", phase, deploymentUnit), e);
                 while (iterator.hasPrevious()) {
                     final DeploymentUnitProcessor prev = iterator.previous();
                     safeUndeploy(deploymentUnit, phase, prev);
                 }
-                final MultipleRemoveListener<Throwable> listener = MultipleRemoveListener.create(new MultipleRemoveListener.Callback<Throwable>() {
-                    public void handleDone(final Throwable parameter) {
-                        context.failed(cause);
-                    }
-                }, cause);
-                for (ServiceName serviceName : serviceTarget.getSet()) {
-                    final ServiceController<?> controller = container.getService(serviceName);
-                    if (controller != null) {
-                        controller.setMode(ServiceController.Mode.REMOVE);
-                        controller.addListener(listener);
-                    }
-                }
-                listener.done();
-                return;
+                throw new StartException(String.format("Failed to process phase %s of %s", phase, deploymentUnit), e);
             }
         }
         final Phase nextPhase = phase.next();
@@ -125,7 +104,6 @@ final class DeploymentUnitPhaseService<T> implements Service<T> {
 
             phaseServiceBuilder.install();
         }
-        serviceNames = new HashSet<ServiceName>(serviceTarget.getSet());
     }
 
     public synchronized void stop(final StopContext context) {
@@ -138,16 +116,6 @@ final class DeploymentUnitPhaseService<T> implements Service<T> {
             final DeploymentUnitProcessor prev = iterator.previous();
             safeUndeploy(deploymentUnitContext, phase, prev);
         }
-        final MultipleRemoveListener<LifecycleContext> listener = MultipleRemoveListener.create(context);
-        final ServiceContainer container = context.getController().getServiceContainer();
-        for (ServiceName serviceName : serviceNames) {
-            final ServiceController<?> controller = container.getService(serviceName);
-            if (controller != null) {
-                controller.setMode(ServiceController.Mode.REMOVE);
-                controller.addListener(listener);
-            }
-        }
-        listener.done();
     }
 
     private static void safeUndeploy(final DeploymentUnit deploymentUnit, final Phase phase, final DeploymentUnitProcessor prev) {
