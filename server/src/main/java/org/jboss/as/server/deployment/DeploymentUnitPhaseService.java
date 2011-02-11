@@ -24,6 +24,7 @@ package org.jboss.as.server.deployment;
 
 import java.util.List;
 import java.util.ListIterator;
+
 import org.jboss.logging.Logger;
 import org.jboss.msc.inject.Injector;
 import org.jboss.msc.service.DelegatingServiceRegistry;
@@ -107,7 +108,6 @@ final class DeploymentUnitPhaseService<T> implements Service<T> {
     }
 
     public synchronized void stop(final StopContext context) {
-        context.asynchronous();
         final DeploymentUnit deploymentUnitContext = deploymentUnitInjector.getValue();
         final DeployerChains chains = deployerChainsInjector.getValue();
         final List<DeploymentUnitProcessor> list = chains.getChain(phase);
